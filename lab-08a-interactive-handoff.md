@@ -196,13 +196,13 @@ def process_events(event: WorkflowEvent, current_agent: str | None) -> str | Non
 
     Returns the updated current_agent name.
     """
-    # Only show handoff banners for meaningful events (request_info with agent messages)
+    # Show handoff banners when a new agent is invoked (including autonomous handoffs)
+    if event.type == "executor_invoked" and event.executor_id and event.executor_id != current_agent:
+        print_handoff_banner(current_agent, event.executor_id)
+        current_agent = event.executor_id
+
+    # Print agent messages when the agent asks the user for input
     if event.type == "request_info" and isinstance(event.data, HandoffAgentUserRequest):
-        # Check if the active agent changed — this is a real handoff
-        agent_name = event.executor_id
-        if agent_name and agent_name != current_agent:
-            print_handoff_banner(current_agent, agent_name)
-            current_agent = agent_name
         for msg in event.data.agent_response.messages[-2:]:
             if msg.text:
                 print(f"  [{msg.author_name or event.executor_id}]: {msg.text}")
