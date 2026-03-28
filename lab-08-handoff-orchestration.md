@@ -273,7 +273,7 @@ async def main():
 
     pending_requests: list[WorkflowEvent] = []
 
-    async for event in workflow.run_stream(initial_message):
+    async for event in workflow.run(initial_message, stream=True):
         if event.type == "request_info" and isinstance(event.data, HandoffAgentUserRequest):
             pending_requests.append(event)
             for msg in event.data.agent_response.messages[-2:]:
@@ -313,7 +313,7 @@ async def main():
                 responses[req.request_id] = req.data.to_function_approval_response(approved=True)
 
         pending_requests = []
-        async for event in workflow.run(responses=responses):
+        async for event in workflow.run(responses=responses, stream=True):
             if event.type == "request_info" and isinstance(event.data, HandoffAgentUserRequest):
                 pending_requests.append(event)
                 for msg in event.data.agent_response.messages[-2:]:
