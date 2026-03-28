@@ -286,6 +286,9 @@ async def demo_agent_as_mcp_server():
             "- Dessert: Tiramisu"
         )
 
+    from typing import Annotated
+    from pydantic import Field
+
     @tool_decorator(description="Get the restaurant's menu categories and items.")
     def get_menu(
         category: Annotated[str, Field(description="Menu category: appetizers, mains, desserts, drinks")] = "mains",
@@ -298,9 +301,6 @@ async def demo_agent_as_mcp_server():
             "drinks": "House Wine ($8), Craft Beer ($7), Espresso ($4)",
         }
         return menus.get(category.lower(), "Category not found. Try: appetizers, mains, desserts, drinks")
-
-    from typing import Annotated
-    from pydantic import Field
 
     client = AzureOpenAIResponsesClient(
         project_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
