@@ -99,23 +99,32 @@ def print_handoff_banner(from_agent: str | None, to_agent: str):
     print()
 
 
-def process_events(event: WorkflowEvent, current_agent: str | None) -> str | None:
+def process_events(
+    event: WorkflowEvent,
+    current_agent: str | None,
+    started: bool,
+) -> tuple[str | None, bool]:
     """Process a workflow event, print output, and track the active agent.
 
-    Returns the updated current_agent name.
+    Returns (updated current_agent, whether we've shown the starting banner).
     """
-    # Show handoff banners when a new agent is invoked (including autonomous handoffs)
-    if event.type == "executor_invoked" and event.executor_id and event.executor_id != current_agent:
-        print_handoff_banner(current_agent, event.executor_id)
+    # Show "STARTING AGENT" once for the very first executor_invoked
+    if not started and event.type == "executor_invoked" and event.executor_id:
+        print_handoff_banner(None, event.executor_id)
         current_agent = event.executor_id
+        started = True
 
-    # Print agent messages when the agent asks the user for input
+    # Show handoff banner only when the agent that *talks to the user* changes
     if event.type == "request_info" and isinstance(event.data, HandoffAgentUserRequest):
+        agent_name = event.executor_id
+        if agent_name and agent_name != current_agent:
+            print_handoff_banner(current_agent, agent_name)
+            current_agent = agent_name
         for msg in event.data.agent_response.messages[-2:]:
             if msg.text:
                 print(f"  [{msg.author_name or event.executor_id}]: {msg.text}")
 
-    return current_agent
+    return current_agent, started
 
 
 async def main():
@@ -223,11 +232,12 @@ async def main():
         return
 
     current_agent: str | None = None
+    started = False
     pending_requests: list[WorkflowEvent] = []
 
     # Initial run
     async for event in workflow.run(user_input, stream=True):
-        current_agent = process_events(event, current_agent)
+        current_agent, started = process_events(event, current_agent, started)
 
         if event.type == "request_info" and isinstance(event.data, HandoffAgentUserRequest):
             pending_requests.append(event)
@@ -263,7 +273,7 @@ async def main():
         pending_requests = []
 
         async for event in workflow.run(responses=responses, stream=True):
-            current_agent = process_events(event, current_agent)
+            current_agent, started = process_events(event, current_agent, started)
 
             if event.type == "request_info" and isinstance(event.data, HandoffAgentUserRequest):
                 pending_requests.append(event)
