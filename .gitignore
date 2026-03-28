@@ -1,0 +1,27 @@
+# Virtual environments
+.venv/
+venv/
+
+# Environment files
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Node
+node_modules/
+.next/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Checkpoints
+checkpoints/
