@@ -76,21 +76,35 @@ Demonstrates:
   - GroupChatBuilder with round-robin speaker selection
   - Agent-based orchestrator for intelligent speaker selection
   - Termination conditions
-  - Streaming workflow events with AgentResponseUpdate
+  - Tracking which agent speaks each round
 """
 
 import asyncio
 import os
-from typing import cast
 
 from azure.identity import DefaultAzureCredential
 from dotenv import load_dotenv
 
-from agent_framework import AgentResponseUpdate, Message, Role
+from agent_framework import Message
 from agent_framework.azure import AzureOpenAIResponsesClient
 from agent_framework.orchestrations import GroupChatBuilder, GroupChatState
 
 load_dotenv()
+
+
+def print_conversation(messages: list[Message], task_text: str) -> None:
+    """Print the group chat conversation with clear round markers."""
+    round_num = 0
+    for msg in messages:
+        if msg.role == "user":
+            continue  # Skip the initial task message
+        round_num += 1
+        agent_name = msg.author_name or "Unknown"
+        print(f"\n{'─' * 60}")
+        print(f"  Round {round_num} │ Agent: {agent_name}")
+        print(f"{'─' * 60}")
+        if msg.text:
+            print(f"  {msg.text}")
 
 
 async def demo_round_robin():
@@ -156,7 +170,9 @@ async def demo_round_robin():
     # Round-robin selector — each agent speaks in order
     def round_robin_selector(state: GroupChatState) -> str:
         participant_names = list(state.participants.keys())
-        return participant_names[state.current_round % len(participant_names)]
+        selected = participant_names[state.current_round % len(participant_names)]
+        print(f"\n  [Orchestrator] Round {state.current_round + 1}: selecting --> {selected}")
+        return selected
 
     # Build the group chat with round-robin selection
     workflow = GroupChatBuilder(
@@ -177,23 +193,20 @@ async def demo_round_robin():
     print(f"\n📋 Proposal: {task}\n")
     print("-" * 60)
 
-    final_conversation: list[Message] = []
-    last_executor_id: str | None = None
+    result = await workflow.run(task)
 
-    async for event in workflow.run(task, stream=True):
-        if event.type == "output" and isinstance(event.data, AgentResponseUpdate):
-            eid = event.executor_id
-            if eid != last_executor_id:
-                if last_executor_id is not None:
-                    print()
-                print(f"\n🗣️  [{eid}]:", end=" ", flush=True)
-                last_executor_id = eid
-            print(event.data, end="", flush=True)
-        elif event.type == "output":
-            final_conversation = cast(list[Message], event.data)
+    # Extract the final conversation from the output event
+    conversation: list[Message] = []
+    for event in result:
+        if event.type == "output" and isinstance(event.data, list):
+            conversation = event.data
+            break
 
-    print("\n\n" + "-" * 60)
-    print(f"Discussion ended after {len(final_conversation)} messages.")
+    print_conversation(conversation, task)
+
+    print("\n\n" + "=" * 60)
+    print(f"Discussion ended after {len([m for m in conversation if m.role != 'user'])} agent messages.")
+    print("=" * 60)
 
 
 async def demo_orchestrator_agent():
@@ -263,23 +276,27 @@ async def demo_orchestrator_agent():
     print(f"\n📝 Task: {task}\n")
     print("-" * 60)
 
-    final_conversation: list[Message] = []
-    last_executor_id: str | None = None
+    result = await workflow.run(task)
 
-    async for event in workflow.run(task, stream=True):
-        if event.type == "output" and isinstance(event.data, AgentResponseUpdate):
-            eid = event.executor_id
-            if eid != last_executor_id:
-                if last_executor_id is not None:
-                    print()
-                print(f"\n🗣️  [{eid}]:", end=" ", flush=True)
-                last_executor_id = eid
-            print(event.data, end="", flush=True)
-        elif event.type == "output":
-            final_conversation = cast(list[Message], event.data)
+    # Extract the final conversation from the output event
+    conversation: list[Message] = []
+    for event in result:
+        if event.type == "output" and isinstance(event.data, list):
+            conversation = event.data
+            break
 
-    print("\n\n" + "-" * 60)
-    print(f"Maker-checker loop completed in {len(final_conversation)} messages.")
+    print_conversation(conversation, task)
+
+    approved = any(
+        "APPROVED" in m.text.upper()
+        for m in conversation
+        if m.role == "assistant" and m.text
+    )
+
+    print("\n\n" + "=" * 60)
+    status = "APPROVED" if approved else "max rounds reached"
+    print(f"Maker-checker loop completed ({status}) in {len([m for m in conversation if m.role != 'user'])} agent messages.")
+    print("=" * 60)
 
 
 async def main():
@@ -299,7 +316,96 @@ if __name__ == "__main__":
 python main.py
 ```
 
----
+### Expected Output
+
+```
+============================================================
+DEMO 1: Round-Robin Group Chat
+============================================================
+
+📋 Proposal: Review this feature proposal: ...
+
+------------------------------------------------------------
+
+  [Orchestrator] Round 1: selecting --> ProductManager
+
+────────────────────────────────────────────────────────────
+  Round 1 │ Agent: ProductManager
+────────────────────────────────────────────────────────────
+  The Smart Search proposal is exciting — NLU-driven discovery
+  could significantly boost conversion. I'd want to see success
+  metrics defined upfront: search-to-purchase rate, time-to-result...
+
+  [Orchestrator] Round 2: selecting --> Engineer
+
+────────────────────────────────────────────────────────────
+  Round 2 │ Agent: Engineer
+────────────────────────────────────────────────────────────
+  Technically feasible but non-trivial. We'd need an embedding
+  pipeline, vector search infrastructure, and a relevance ranking
+  model. I'd estimate 3-4 months for MVP...
+
+  [Orchestrator] Round 3: selecting --> Designer
+
+────────────────────────────────────────────────────────────
+  Round 3 │ Agent: Designer
+────────────────────────────────────────────────────────────
+  From a UX perspective, the natural language input is great for
+  discoverability. We need to handle empty/ambiguous queries
+  gracefully...
+
+  [Orchestrator] Round 4: selecting --> QALead
+
+────────────────────────────────────────────────────────────
+  Round 4 │ Agent: QALead
+────────────────────────────────────────────────────────────
+  Key testing concerns: How do we validate relevance quality?
+  We'll need a benchmark dataset and A/B testing framework...
+
+
+============================================================
+Discussion ended after 4 agent messages.
+============================================================
+
+
+============================================================
+DEMO 2: Agent-Based Orchestrator Group Chat
+============================================================
+
+📝 Task: Write a concise API reference entry for a 'POST /api/users'
+endpoint...
+
+------------------------------------------------------------
+
+────────────────────────────────────────────────────────────
+  Round 1 │ Agent: Writer
+────────────────────────────────────────────────────────────
+  ## POST /api/users
+  Creates a new user account.
+  **Parameters:** ...
+
+────────────────────────────────────────────────────────────
+  Round 2 │ Agent: Reviewer
+────────────────────────────────────────────────────────────
+  Good structure. Missing: rate limiting info, authentication
+  requirements. Add a 409 Conflict response code...
+
+────────────────────────────────────────────────────────────
+  Round 3 │ Agent: Writer
+────────────────────────────────────────────────────────────
+  ## POST /api/users (revised)
+  ...
+
+────────────────────────────────────────────────────────────
+  Round 4 │ Agent: Reviewer
+────────────────────────────────────────────────────────────
+  APPROVED — comprehensive and well-formatted.
+
+
+============================================================
+Maker-checker loop completed (APPROVED) in 4 agent messages.
+============================================================
+```
 
 ## Key Takeaways
 
