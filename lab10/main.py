@@ -4,9 +4,9 @@ Microsoft Agent Framework Workshop
 
 Demonstrates:
   - MagenticBuilder for dynamic multi-agent orchestration
-  - Manager agent with task ledger
+  - Manager agent that creates and adapts plans
   - Progress tracking with MagenticProgressLedger
-  - Streaming intermediate agent outputs
+  - Clear visibility into plan → delegate → assess cycle
   - Human-in-the-loop plan review
 """
 
@@ -30,10 +30,76 @@ from agent_framework.orchestrations import (
 load_dotenv()
 
 
+def print_magentic_events(result) -> list[Message]:
+    """Print Magentic orchestration events showing the plan-delegate-assess cycle."""
+    conversation: list[Message] = []
+    round_num = 0
+    current_agent: str | None = None
+
+    for event in result:
+        # Manager creates or updates the plan
+        if event.type == "magentic_orchestrator":
+            data = event.data
+            event_name = data.event_type.name if hasattr(data.event_type, 'name') else str(data.event_type)
+
+            if isinstance(data.content, Message) and data.content.text:
+                print(f"\n{'=' * 60}")
+                print(f"  [Manager] {event_name}")
+                print(f"{'=' * 60}")
+                plan_text = data.content.text
+                if len(plan_text) > 500:
+                    plan_text = plan_text[:500] + "..."
+                print(f"  {plan_text}")
+
+            elif isinstance(data.content, MagenticProgressLedger):
+                ledger = data.content.to_dict()
+                print(f"\n{'─' * 60}")
+                print(f"  [Manager] Progress Assessment")
+                print(f"{'─' * 60}")
+                if "is_request_satisfied" in ledger:
+                    satisfied = ledger["is_request_satisfied"]
+                    print(f"  Task complete: {'Yes' if satisfied.get('answer') else 'No'}")
+                    if satisfied.get("reason"):
+                        print(f"  Reason: {satisfied['reason']}")
+                if "next_speaker" in ledger:
+                    ns = ledger["next_speaker"]
+                    next_agent = ns.get("answer", "unknown")
+                    reason = ns.get("reason", "")
+                    print(f"  Next agent: {next_agent}")
+                    print(f"  Why: {reason}")
+
+        # Agent is invoked — show the delegation
+        elif event.type == "executor_invoked" and event.executor_id:
+            agent = event.executor_id
+            if agent != current_agent and agent != "magentic_orchestrator":
+                round_num += 1
+                current_agent = agent
+                print(f"\n{'━' * 60}")
+                print(f"  Round {round_num} │ Manager delegates to: {agent}")
+                print(f"{'━' * 60}")
+
+        # Agent produces output — show a summary
+        elif event.type == "output" and isinstance(event.data, list):
+            conversation = event.data
+
+        elif event.type == "executor_completed" and event.executor_id:
+            agent = event.executor_id
+            if agent != "magentic_orchestrator" and event.data:
+                if hasattr(event.data, '__iter__'):
+                    for item in event.data:
+                        if hasattr(item, 'agent_response') and hasattr(item.agent_response, 'text'):
+                            text = item.agent_response.text
+                            if text:
+                                preview = text[:300] + "..." if len(text) > 300 else text
+                                print(f"  [{agent}] output: {preview}")
+
+    return conversation
+
+
 async def demo_basic_magentic():
-    """Demo 1: Basic Magentic Orchestration."""
+    """Demo 1: Basic Magentic Orchestration without HITL."""
     print("=" * 60)
-    print("DEMO 1: Basic Magentic Orchestration")
+    print("DEMO 1: Magentic Orchestration — Plan, Delegate, Assess")
     print("=" * 60)
 
     client = AzureOpenAIResponsesClient(
@@ -45,25 +111,41 @@ async def demo_basic_magentic():
     researcher = client.as_agent(
         name="ResearcherAgent",
         description="Expert in research and information gathering",
-        instructions="You are a Researcher. Gather factual, well-structured research notes. Be thorough but concise.",
+        instructions=(
+            "You are a Researcher. Gather comprehensive information on the topic. "
+            "Provide factual, well-structured research notes with key data points, "
+            "statistics, and relevant context. Be thorough but concise."
+        ),
     )
 
     analyst = client.as_agent(
         name="AnalystAgent",
         description="Expert in data analysis and quantitative reasoning",
-        instructions="You are a Data Analyst. Analyze data, create comparisons, identify trends. Use tables when helpful.",
+        instructions=(
+            "You are a Data Analyst. Analyze data, perform calculations, "
+            "create comparisons, and identify trends. Present findings in "
+            "structured format with tables when helpful."
+        ),
     )
 
     writer = client.as_agent(
         name="WriterAgent",
         description="Expert in writing clear, polished reports",
-        instructions="You are a Report Writer. Synthesize research into a well-structured report with executive summary.",
+        instructions=(
+            "You are a professional Report Writer. Synthesize research and "
+            "analysis into a well-structured, readable report. Include an "
+            "executive summary, key findings, and recommendations."
+        ),
     )
 
     manager = client.as_agent(
         name="MagenticManager",
         description="Orchestrator that coordinates the research team",
-        instructions="You coordinate Researcher, Analyst, and Writer to produce comprehensive reports.",
+        instructions=(
+            "You coordinate a team of Researcher, Analyst, and Writer "
+            "to produce comprehensive reports. Break tasks into clear steps "
+            "and assign them to the right specialist."
+        ),
     )
 
     workflow = MagenticBuilder(
@@ -76,45 +158,40 @@ async def demo_basic_magentic():
     ).build()
 
     task = (
-        "Create a comparative analysis report on AWS, Azure, and GCP for AI/ML workloads. "
-        "Compare AI services, pricing, and unique strengths. Recommend the best choice "
-        "for a mid-size company starting their AI journey."
+        "Create a comparative analysis report on the three main cloud providers "
+        "(AWS, Azure, GCP) for AI/ML workloads. Compare their AI services, "
+        "pricing models, and unique strengths. Recommend the best choice for "
+        "a mid-size company starting their AI journey."
     )
 
     print(f"\n📋 Task: {task}\n")
     print("-" * 60)
+    print("  The Manager will now plan, delegate to agents, assess progress,")
+    print("  and iterate until the task is complete.")
+    print("-" * 60)
 
-    last_message_id: str | None = None
-    output_event: WorkflowEvent | None = None
+    result = await workflow.run(task, include_status_events=True)
 
-    async for event in workflow.run(task, stream=True):
-        if event.type == "output" and isinstance(event.data, AgentResponseUpdate):
-            message_id = event.data.message_id
-            if message_id != last_message_id:
-                if last_message_id is not None:
-                    print("\n")
-                print(f"🤖 [{event.executor_id}]:", end=" ", flush=True)
-                last_message_id = message_id
-            print(event.data, end="", flush=True)
-        elif event.type == "magentic_orchestrator":
-            print(f"\n\n📊 [Orchestrator] {event.data.event_type.name}")
-            if isinstance(event.data.content, Message):
-                print(f"   Plan: {event.data.content.text[:200]}...")
-            elif isinstance(event.data.content, MagenticProgressLedger):
-                print(f"   Ledger: {json.dumps(event.data.content.to_dict(), indent=2)[:300]}...")
-        elif event.type == "output":
-            output_event = event
+    conversation = print_magentic_events(result)
 
-    if output_event:
-        output_messages = cast(list[Message], output_event.data)
+    if conversation:
+        final_text = ""
+        for msg in reversed(conversation):
+            if msg.role == "assistant" and msg.text:
+                final_text = msg.text
+                break
         print("\n\n" + "=" * 60)
-        print("📄 FINAL REPORT")
+        print("  FINAL REPORT")
         print("=" * 60)
-        print(output_messages[-1].text if output_messages else "No output")
+        if final_text:
+            print(f"\n  {final_text[:1500]}")
+            if len(final_text) > 1500:
+                print("  ... (truncated)")
+        print("\n" + "=" * 60)
 
 
 async def demo_magentic_with_plan_review():
-    """Demo 2: Magentic with HITL Plan Review."""
+    """Demo 2: Magentic with Human-in-the-Loop Plan Review."""
     print("\n\n" + "=" * 60)
     print("DEMO 2: Magentic with HITL Plan Review")
     print("=" * 60)
@@ -127,19 +204,19 @@ async def demo_magentic_with_plan_review():
 
     researcher = client.as_agent(
         name="ResearcherAgent",
-        description="Research specialist",
-        instructions="You are a Researcher. Gather comprehensive information. Be concise.",
+        description="Expert in research and information gathering",
+        instructions="You are a Researcher. Gather comprehensive information. Be thorough but concise.",
     )
 
     analyst = client.as_agent(
         name="AnalystAgent",
-        description="Analysis specialist",
+        description="Expert in data analysis",
         instructions="You are a Data Analyst. Analyze data and identify trends.",
     )
 
     manager = client.as_agent(
         name="MagenticManager",
-        description="Team orchestrator",
+        description="Orchestrator for the research team",
         instructions="You coordinate Researcher and Analyst efficiently.",
     )
 
@@ -154,11 +231,12 @@ async def demo_magentic_with_plan_review():
     ).build()
 
     task = (
-        "Research the current state of quantum computing in 2026 and analyze "
-        "which industries will be most impacted in the next 5 years."
+        "Research the current state of quantum computing in 2026 "
+        "and analyze which industries will be most impacted in the next 5 years."
     )
 
     print(f"\n📋 Task: {task}\n")
+    print("-" * 60)
 
     pending_request: WorkflowEvent | None = None
     pending_responses: dict[str, MagenticPlanReviewResponse] | None = None
@@ -166,40 +244,55 @@ async def demo_magentic_with_plan_review():
 
     while not output_event:
         if pending_responses is not None:
-            stream = workflow.run(stream=True, responses=pending_responses)
+            result = await workflow.run(responses=pending_responses, include_status_events=True)
         else:
-            stream = workflow.run(task, stream=True)
+            result = await workflow.run(task, include_status_events=True)
 
-        last_message_id: str | None = None
-        async for event in stream:
-            if event.type == "output" and isinstance(event.data, AgentResponseUpdate):
-                message_id = event.data.message_id
-                if message_id != last_message_id:
-                    if last_message_id is not None:
-                        print("\n")
-                    print(f"🤖 [{event.executor_id}]:", end=" ", flush=True)
-                    last_message_id = message_id
-                print(event.data, end="", flush=True)
-            elif event.type == "request_info" and event.request_type is MagenticPlanReviewRequest:
+        for event in result:
+            if event.type == "request_info" and event.request_type is MagenticPlanReviewRequest:
                 pending_request = event
-            elif event.type == "output":
+            elif event.type == "output" and isinstance(event.data, list):
                 output_event = event
+
+        if output_event:
+            conversation = print_magentic_events(result)
+            break
 
         pending_responses = None
 
         if pending_request is not None:
             event_data = cast(MagenticPlanReviewRequest, pending_request.data)
-            print(f"\n\n📋 PLAN REVIEW: {event_data.plan.text[:300]}...")
-            print("✅ Plan auto-approved for demo.")
+            print("\n" + "=" * 60)
+            print("  [HITL] PLAN REVIEW REQUEST")
+            print("=" * 60)
+
+            if event_data.current_progress is not None:
+                ledger = event_data.current_progress.to_dict()
+                print("  Current Progress:")
+                print(f"  {json.dumps(ledger, indent=2)[:500]}")
+
+            plan_text = event_data.plan.text[:500] if event_data.plan.text else "(empty)"
+            print(f"\n  Proposed Plan:\n  {plan_text}")
+
+            print("\n  [HITL] Plan auto-approved for demo.")
             pending_responses = {pending_request.request_id: event_data.approve()}
             pending_request = None
 
     if output_event:
         output_messages = cast(list[Message], output_event.data)
+        final_text = ""
+        for msg in reversed(output_messages):
+            if msg.role == "assistant" and msg.text:
+                final_text = msg.text
+                break
         print("\n\n" + "=" * 60)
-        print("📄 FINAL REPORT")
+        print("  FINAL REPORT")
         print("=" * 60)
-        print(output_messages[-1].text[:1000] if output_messages else "No output")
+        if final_text:
+            print(f"\n  {final_text[:1000]}")
+            if len(final_text) > 1000:
+                print("  ... (truncated)")
+        print("\n" + "=" * 60)
 
 
 async def main():
