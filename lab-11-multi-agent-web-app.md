@@ -94,13 +94,16 @@ AG-UI + FastAPI server that exposes a multi-agent handoff workflow
 as an HTTP endpoint with Server-Sent Events streaming.
 """
 
+import json
 import os
+import re
 from typing import Annotated
 
 from azure.identity import DefaultAzureCredential
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import Field
 
 from agent_framework import tool
@@ -261,9 +264,64 @@ def create_advisory_agent():
     return concierge
 
 
-# ── Register the AG-UI endpoint ──
+# ── Register endpoints ──
 
 agent = create_advisory_agent()
+
+
+def _camel_to_snake(name: str) -> str:
+    return re.sub(r"(?<=[a-z0-9])([A-Z])", r"_\1", name).lower()
+
+
+def _convert_keys(obj):
+    if isinstance(obj, dict):
+        return {_camel_to_snake(k): _convert_keys(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_convert_keys(item) for item in obj]
+    return obj
+
+
+@app.post("/api/copilotkit/info")
+async def copilotkit_info():
+    """CopilotKit runtime info — returns available agents."""
+    return {
+        "agents": [
+            {
+                "name": "default",
+                "id": "default",
+                "description": "AI Advisory Board — routes to Strategy, Finance, Legal, and Tech advisors.",
+            }
+        ],
+        "actions": [],
+    }
+
+
+# CopilotKit sends an RPC envelope; this middleware unwraps it for AG-UI
+from starlette.middleware.base import BaseHTTPMiddleware
+
+
+class CopilotKitUnwrapMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.method == "POST" and request.url.path == "/api/copilotkit":
+            body_bytes = await request.body()
+            try:
+                data = json.loads(body_bytes)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                return await call_next(request)
+            if "body" in data and "method" in data:
+                data = data["body"]
+            data = _convert_keys(data)
+            new_body = json.dumps(data).encode()
+
+            async def receive():
+                return {"type": "http.request", "body": new_body}
+
+            request._receive = receive
+        return await call_next(request)
+
+
+app.add_middleware(CopilotKitUnwrapMiddleware)
+
 add_agent_framework_fastapi_endpoint(app, agent, path="/api/copilotkit")
 
 
