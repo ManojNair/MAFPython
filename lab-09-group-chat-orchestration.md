@@ -180,7 +180,7 @@ async def demo_round_robin():
     final_conversation: list[Message] = []
     last_executor_id: str | None = None
 
-    async for event in workflow.run_stream(task):
+    async for event in workflow.run(task, stream=True):
         if event.type == "output" and isinstance(event.data, AgentResponseUpdate):
             eid = event.executor_id
             if eid != last_executor_id:
@@ -266,7 +266,7 @@ async def demo_orchestrator_agent():
     final_conversation: list[Message] = []
     last_executor_id: str | None = None
 
-    async for event in workflow.run_stream(task):
+    async for event in workflow.run(task, stream=True):
         if event.type == "output" and isinstance(event.data, AgentResponseUpdate):
             eid = event.executor_id
             if eid != last_executor_id:
