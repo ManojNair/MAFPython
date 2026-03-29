@@ -252,7 +252,34 @@ async def demo_orchestrator_agent():
             conversation = event.data
             break
 
-    print_conversation(conversation, task)
+    # Print with orchestrator reasoning
+    round_num = 0
+    prev_agent: str | None = None
+    for msg in conversation:
+        if msg.role == "user":
+            continue
+        round_num += 1
+        agent_name = msg.author_name or "Unknown"
+
+        # Explain WHY the orchestrator chose this agent
+        if round_num == 1:
+            reason = "No draft exists yet — orchestrator starts with Writer."
+        elif agent_name == "Reviewer" and prev_agent == "Writer":
+            reason = "Writer submitted content — orchestrator sends to Reviewer for evaluation."
+        elif agent_name == "Writer" and prev_agent == "Reviewer":
+            reason = "Reviewer gave feedback — orchestrator sends back to Writer for revision."
+        elif agent_name == "Reviewer":
+            reason = "Writer revised the draft — orchestrator sends to Reviewer to re-evaluate."
+        else:
+            reason = "Orchestrator selected next speaker based on conversation context."
+
+        print(f"\n  [Orchestrator] {reason}")
+        print(f"{'─' * 60}")
+        print(f"  Round {round_num} │ Agent: {agent_name}")
+        print(f"{'─' * 60}")
+        if msg.text:
+            print(f"  {msg.text}")
+        prev_agent = agent_name
 
     approved = any(
         "APPROVED" in m.text.upper()
