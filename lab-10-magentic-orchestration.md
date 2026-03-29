@@ -518,8 +518,4 @@ cloud providers (AWS, Azure, GCP) for AI/ML workloads...
 5. **`enable_plan_review=True`** adds HITL gates where humans can approve or revise the plan before execution begins.
 6. This pattern is best for **open-ended, complex tasks** where the solution path isn't known in advance — the Manager adapts the plan as new information emerges.
 
----
 
-## What's Next?
-
-In **[Lab 11 — Multi-Agent Web App](lab-11-multi-agent-web-app.md)**, you'll combine everything you've learned to build a beautiful, production-ready chat interface using **CopilotKit** and the **AG-UI protocol**.

@@ -1,6 +1,6 @@
 # LetsMAFAgents — Microsoft Agent Framework Workshop
 
-A hands-on workshop that takes you from building your first AI agent to orchestrating sophisticated multi-agent systems using the **Microsoft Agent Framework** and Python. By the end, you'll have built and deployed a production-ready multi-agent web application on Azure.
+A hands-on workshop that takes you from building your first AI agent to orchestrating sophisticated multi-agent systems using the **Microsoft Agent Framework** and Python.
 
 ## What is Microsoft Agent Framework?
 
@@ -13,7 +13,7 @@ Microsoft Agent Framework is an open-source SDK that unifies **AutoGen** (simple
 | **Python** | 3.11+ | Runtime for all labs |
 | **Azure CLI** | Latest | Authentication to Azure |
 | **VS Code** | Latest | IDE (recommended) |
-| **Node.js** | 18+ | Required for Lab 11 (frontend) |
+
 | **Git** | Latest | Version control |
 
 You must be authenticated to Azure (`az login`) with access to an Azure OpenAI deployment.
@@ -33,8 +33,6 @@ You must be authenticated to Azure (`az login`) with access to an Azure OpenAI d
 | [08](lab-08-handoff-orchestration.md) | **Handoff Orchestration** | Dynamic delegation — agents transfer control based on conversation context | `HandoffBuilder`, customer support system, tool approval (HITL), autonomous mode |
 | [09](lab-09-group-chat-orchestration.md) | **Group Chat Orchestration** | Collaborative debate with centralized speaker selection | `GroupChatBuilder`, round-robin & LLM-based selection, shared conversation thread |
 | [10](lab-10-magentic-orchestration.md) | **Magentic Orchestration** | Dynamic planning with a manager agent, task ledger, and progress tracking | `MagenticBuilder`, adaptive planning, stall detection, human-in-the-loop plan review |
-| [11](lab-11-multi-agent-web-app.md) | **Multi-Agent Web App** | Production-ready web app with CopilotKit frontend and AG-UI backend | FastAPI + AG-UI, CopilotKit React components, SSE streaming, Next.js |
-| [12](lab-12-deploy-to-azure.md) | **Deploy to Azure** | Deploy the web app backend to Azure Container Apps with Managed Identity | Dockerfile, Azure Container Apps, Managed Identity, `DefaultAzureCredential` |
 
 ## Project Structure
 
@@ -43,12 +41,7 @@ You must be authenticated to Azure (`az login`) with access to an Azure OpenAI d
 ├── labXX/
 │   ├── main.py          # Lab source code
 │   └── requirements.txt # Python dependencies
-├── lab11/
-│   ├── server.py        # FastAPI + AG-UI backend
-│   └── frontend/        # Next.js + CopilotKit frontend
-└── lab12/
-    ├── Dockerfile        # Container image for deployment
-    └── deploy.sh         # Azure deployment script
+
 ```
 
 ## Getting Started

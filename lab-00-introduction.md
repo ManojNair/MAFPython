@@ -100,8 +100,6 @@ This workshop covers all five multi-agent orchestration patterns from the [Azure
 | **08** | Handoff Orchestration | Dynamic delegation between agents |
 | **09** | Group Chat Orchestration | Collaborative debate with speaker selection |
 | **10** | Magentic Orchestration | Dynamic planning with task ledger |
-| **11** | Multi-Agent Web App | CopilotKit + AG-UI beautiful chat interface |
-| **12** | Deploy to Azure | Azure Container Apps deployment |
 
 ---
 
@@ -116,7 +114,7 @@ Before you begin, ensure you have the following installed and configured:
 | **Python** | 3.11 or higher | Runtime for all labs |
 | **Azure CLI** | Latest | Authentication to Azure |
 | **VS Code** | Latest | IDE (recommended) |
-| **Node.js** | 18 or higher | Required for Lab 11 (CopilotKit frontend) |
+
 | **Git** | Latest | Version control |
 
 ### Azure Access
