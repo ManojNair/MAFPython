@@ -114,12 +114,19 @@ def process_events(
         current_agent = event.executor_id
         started = True
 
-    # Show handoff banner only when the agent that *talks to the user* changes
+    # Show handoff banner when the agent speaking to the user changes
     if event.type == "request_info" and isinstance(event.data, HandoffAgentUserRequest):
-        agent_name = event.executor_id
-        if agent_name and agent_name != current_agent:
-            print_handoff_banner(current_agent, agent_name)
-            current_agent = agent_name
+        # Determine which agent is actually speaking from message author
+        speaking_agent = event.executor_id
+        for msg in event.data.agent_response.messages[-2:]:
+            if msg.author_name:
+                speaking_agent = msg.author_name
+                break
+
+        if speaking_agent and speaking_agent != current_agent:
+            print_handoff_banner(current_agent, speaking_agent)
+            current_agent = speaking_agent
+
         for msg in event.data.agent_response.messages[-2:]:
             if msg.text:
                 print(f"  [{msg.author_name or event.executor_id}]: {msg.text}")
@@ -245,7 +252,7 @@ async def main():
             pending_requests.append(event)
             func_call = event.data.function_call
             args = func_call.parse_arguments() or {}
-            print(f"\n  APPROVAL REQUIRED: {func_call.name}")
+            print(f"\n  [APPROVAL TEAM] Action requires approval: {func_call.name}")
             print(f"  Arguments: {args}")
 
     # Continue until user quits or workflow ends
@@ -264,10 +271,10 @@ async def main():
                 responses[req.request_id] = HandoffAgentUserRequest.create_response(user_input)
 
             elif isinstance(req.data, Content) and req.data.type == "function_approval_request":
-                # Ask user for approval
-                approval = input("  Approve? (yes/no): ").strip().lower()
+                # Approval goes to the approval team, not the customer
+                approval = input("  [APPROVAL TEAM] Approve this action? (yes/no): ").strip().lower()
                 approved = approval in ("yes", "y")
-                print(f"  {'Approved' if approved else 'Denied'}")
+                print(f"  [APPROVAL TEAM] {'Approved' if approved else 'Denied'}")
                 responses[req.request_id] = req.data.to_function_approval_response(approved=approved)
 
         pending_requests = []
@@ -281,7 +288,7 @@ async def main():
                 pending_requests.append(event)
                 func_call = event.data.function_call
                 args = func_call.parse_arguments() or {}
-                print(f"\n  APPROVAL REQUIRED: {func_call.name}")
+                print(f"\n  [APPROVAL TEAM] Action requires approval: {func_call.name}")
                 print(f"  Arguments: {args}")
 
     print("\n" + "=" * 60)
