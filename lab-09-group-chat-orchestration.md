@@ -35,6 +35,30 @@ Build a **collaborative multi-agent debate** system where specialized agents dis
 
 **Also known as:** Roundtable, Collaborative, Multi-Agent Debate, Council
 
+### How Does the Orchestrator Choose Who Speaks?
+
+The `GroupChatBuilder` supports two speaker selection strategies:
+
+| Strategy | How it works | When to use |
+|----------|-------------|-------------|
+| **`selection_func`** | You provide a Python function that receives the current `GroupChatState` (participants, round number, conversation history) and returns the name of the next speaker. | Deterministic patterns — round-robin, priority-based, or any custom logic. |
+| **`orchestrator_agent`** | An LLM-based agent reads the full conversation and decides which participant should speak next based on context. | Dynamic selection — when the "right" next speaker depends on what was just said. |
+
+**Demo 1 uses `selection_func`** with round-robin logic:
+```python
+def round_robin_selector(state: GroupChatState) -> str:
+    names = list(state.participants.keys())
+    return names[state.current_round % len(names)]
+```
+The orchestrator cycles through agents in order: PM → Engineer → Designer → QA → PM → ...
+
+**Demo 2 uses `orchestrator_agent`** — an LLM that reasons about the conversation:
+- Sees the Writer just submitted a draft? → Picks the Reviewer.
+- Sees the Reviewer gave feedback? → Sends it back to the Writer.
+- Sees "APPROVED"? → The termination condition ends the loop.
+
+The orchestrator agent never speaks to the user — it only decides *who* speaks next.
+
 ---
 
 ## Setup
@@ -208,6 +232,43 @@ async def demo_round_robin():
     print(f"Discussion ended after {len([m for m in conversation if m.role != 'user'])} agent messages.")
     print("=" * 60)
 
+    # ── Synthesize the discussion into a final recommendation ──
+
+    print("\n  Synthesizing group discussion...\n")
+
+    # Build a transcript of the discussion for the synthesizer
+    transcript = "\n\n".join(
+        f"[{msg.author_name}]: {msg.text}"
+        for msg in conversation
+        if msg.role != "user" and msg.text
+    )
+
+    synthesizer = client.as_agent(
+        name="Synthesizer",
+        instructions=(
+            "You are a decision facilitator. You've just observed a group discussion "
+            "between a Product Manager, Engineer, Designer, and QA Lead reviewing a "
+            "feature proposal. Synthesize their input into a clear, actionable "
+            "recommendation. Include:\n"
+            "- GO / NO-GO / CONDITIONAL GO decision\n"
+            "- Key concerns that must be addressed\n"
+            "- Suggested next steps\n\n"
+            "Keep it under 200 words."
+        ),
+    )
+
+    synthesis = await synthesizer.run(
+        f"Here is the team's discussion on the Smart Search proposal:\n\n{transcript}\n\n"
+        f"Please provide your synthesized recommendation."
+    )
+
+    print("=" * 60)
+    print("  FINAL RECOMMENDATION (synthesized from group discussion)")
+    print("=" * 60)
+    if synthesis.text:
+        print(f"\n  {synthesis.text}")
+    print("\n" + "=" * 60)
+
 
 async def demo_orchestrator_agent():
     """Demo 2: Group Chat with LLM-based orchestrator."""
@@ -367,6 +428,30 @@ DEMO 1: Round-Robin Group Chat
 Discussion ended after 4 agent messages.
 ============================================================
 
+  Synthesizing group discussion...
+
+============================================================
+  FINAL RECOMMENDATION (synthesized from group discussion)
+============================================================
+
+  CONDITIONAL GO — Proceed with Smart Search as a mobile-first MVP.
+
+  Key concerns to address:
+  - Engineer: Build embedding pipeline + vector search; estimate
+    3-4 months for MVP. Address scalability before desktop rollout.
+  - Designer: Handle ambiguous/empty queries gracefully; run
+    usability testing with diverse user groups.
+  - QA: Create benchmark dataset for relevance scoring; set up
+    A/B testing framework to compare against keyword search.
+
+  Suggested next steps:
+  1. Define success metrics (search-to-purchase rate, time-to-result)
+  2. Spike on vector search infrastructure (2 weeks)
+  3. Mobile prototype with 5 user research sessions
+  4. QA to build benchmark dataset in parallel
+
+============================================================
+
 
 ============================================================
 DEMO 2: Agent-Based Orchestrator Group Chat
@@ -414,7 +499,8 @@ Maker-checker loop completed (APPROVED) in 4 agent messages.
 3. **`orchestrator_agent`** uses an LLM to intelligently decide who speaks next.
 4. **`termination_condition`** controls when the conversation ends (message count, keyword detection, etc.).
 5. **All agents see the full conversation** — context is synchronized after each turn.
-6. The **maker-checker loop** (Writer + Reviewer) is a powerful pattern for quality-gated content creation.
+6. **Synthesis step** — after the group chat ends, a separate agent can read the full transcript and produce a final recommendation, completing the pattern: *prompt → multi-agent discussion → actionable outcome*.
+7. The **maker-checker loop** (Writer + Reviewer) is a powerful pattern for quality-gated content creation.
 
 ---
 

@@ -138,6 +138,43 @@ async def demo_round_robin():
     print(f"Discussion ended after {len([m for m in conversation if m.role != 'user'])} agent messages.")
     print("=" * 60)
 
+    # ── Synthesize the discussion into a final recommendation ──
+
+    print("\n  Synthesizing group discussion...\n")
+
+    # Build a transcript of the discussion for the synthesizer
+    transcript = "\n\n".join(
+        f"[{msg.author_name}]: {msg.text}"
+        for msg in conversation
+        if msg.role != "user" and msg.text
+    )
+
+    synthesizer = client.as_agent(
+        name="Synthesizer",
+        instructions=(
+            "You are a decision facilitator. You've just observed a group discussion "
+            "between a Product Manager, Engineer, Designer, and QA Lead reviewing a "
+            "feature proposal. Synthesize their input into a clear, actionable "
+            "recommendation. Include:\n"
+            "- GO / NO-GO / CONDITIONAL GO decision\n"
+            "- Key concerns that must be addressed\n"
+            "- Suggested next steps\n\n"
+            "Keep it under 200 words."
+        ),
+    )
+
+    synthesis = await synthesizer.run(
+        f"Here is the team's discussion on the Smart Search proposal:\n\n{transcript}\n\n"
+        f"Please provide your synthesized recommendation."
+    )
+
+    print("=" * 60)
+    print("  FINAL RECOMMENDATION (synthesized from group discussion)")
+    print("=" * 60)
+    if synthesis.text:
+        print(f"\n  {synthesis.text}")
+    print("\n" + "=" * 60)
+
 
 async def demo_orchestrator_agent():
     """Demo 2: Group Chat with LLM-based orchestrator."""
