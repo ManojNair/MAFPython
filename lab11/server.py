@@ -17,7 +17,7 @@ from pydantic import Field
 
 from agent_framework import tool
 from agent_framework.azure import AzureOpenAIResponsesClient
-from agent_framework_ag_ui.fastapi import add_agent_framework_fastapi_endpoint
+from agent_framework_ag_ui import add_agent_framework_fastapi_endpoint
 
 load_dotenv()
 
